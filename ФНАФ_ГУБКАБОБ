@@ -1,0 +1,659 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
+  Dimensions,
+  Alert,
+  StatusBar,
+  ImageBackground
+} from 'react-native';
+import Svg, { Rect, Circle, Polygon } from 'react-native-svg';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const Game = () => {
+  // Состояние игры
+  const [gameState, setGameState] = useState({
+    night: 1,
+    power: 100,
+    time: 300, // 5 минут в секундах
+    leftDoor: false,
+    rightDoor: false,
+    cameraOn: false,
+    gameOver: false,
+    win: false,
+    paused: false,
+  });
+
+  const [characters, setCharacters] = useState({
+    spongebob: {
+      name: 'SpongeBob',
+      position: 0, // 0=start, 1=hall, 2=door, 3=office
+      aggressive: 0.7,
+      moveTimer: 0,
+      side: 'left',
+      visible: false,
+    },
+    patrick: {
+      name: 'Patrick',
+      position: 0,
+      aggressive: 0.6,
+      moveTimer: 0,
+      side: 'right',
+      visible: false,
+    },
+  });
+
+  const gameLoopRef = useRef(null);
+  const lastUpdateTimeRef = useRef(Date.now());
+
+  // Инициализация игры
+  useEffect(() => {
+    startGame();
+    return () => {
+      if (gameLoopRef.current) {
+        clearInterval(gameLoopRef.current);
+      }
+    };
+  }, []);
+
+  const startGame = () => {
+    if (gameLoopRef.current) {
+      clearInterval(gameLoopRef.current);
+    }
+
+    gameLoopRef.current = setInterval(() => {
+      if (!gameState.paused && !gameState.gameOver && !gameState.win) {
+        updateGame();
+      }
+    }, 1000); // Обновляем каждую секунду
+  };
+
+  const updateGame = () => {
+    const now = Date.now();
+    const deltaTime = (now - lastUpdateTimeRef.current) / 1000;
+    lastUpdateTimeRef.current = now;
+
+    // Обновляем время
+    setGameState(prev => {
+      if (prev.time <= 0) {
+        // Победа!
+        clearInterval(gameLoopRef.current);
+        return { ...prev, win: true, time: 0 };
+      }
+      return { ...prev, time: prev.time - 1 };
+    });
+
+    // Расход энергии
+    setGameState(prev => {
+      let powerDrain = 0.2;
+      if (prev.leftDoor) powerDrain += 0.3;
+      if (prev.rightDoor) powerDrain += 0.3;
+      if (prev.cameraOn) powerDrain += 0.2;
+
+      const newPower = Math.max(0, prev.power - powerDrain);
+
+      if (newPower <= 0 && !prev.gameOver) {
+        Alert.alert('Игра окончена', 'Закончилась энергия!');
+        return { ...prev, power: 0, gameOver: true };
+      }
+
+      return { ...prev, power: newPower };
+    });
+
+    // Движение персонажей
+    setCharacters(prevChars => {
+      const newChars = { ...prevChars };
+
+      Object.keys(newChars).forEach(charKey => {
+        const char = newChars[charKey];
+        
+        if (char.moveTimer > 0) {
+          char.moveTimer--;
+          return;
+        }
+
+        const moveChance = char.aggressive * (gameState.night * 0.2);
+        
+        if (Math.random() < moveChance) {
+          const doorClosed = char.side === 'left' ? gameState.leftDoor : gameState.rightDoor;
+          
+          if (!doorClosed || Math.random() < 0.3) {
+            char.position = Math.min(3, char.position + 1);
+            char.moveTimer = Math.floor(Math.random() * 5) + 3;
+            char.visible = char.position === 3;
+
+            if (char.position === 3 && !gameState.gameOver) {
+              clearInterval(gameLoopRef.current);
+              Alert.alert('Игра окончена', `${char.name} атаковал вас!`);
+              setGameState(prev => ({ ...prev, gameOver: true }));
+            }
+          }
+        }
+      });
+
+      return newChars;
+    });
+  };
+
+  const toggleDoor = (side) => {
+    if (side === 'left') {
+      setGameState(prev => ({ ...prev, leftDoor: !prev.leftDoor }));
+    } else {
+      setGameState(prev => ({ ...prev, rightDoor: !prev.rightDoor }));
+    }
+  };
+
+  const toggleCamera = () => {
+    setGameState(prev => ({ ...prev, cameraOn: !prev.cameraOn }));
+  };
+
+  const restartGame = () => {
+    setGameState({
+      night: 1,
+      power: 100,
+      time: 300,
+      leftDoor: false,
+      rightDoor: false,
+      cameraOn: false,
+      gameOver: false,
+      win: false,
+      paused: false,
+    });
+
+    setCharacters({
+      spongebob: {
+        name: 'SpongeBob',
+        position: 0,
+        aggressive: 0.7,
+        moveTimer: 0,
+        side: 'left',
+        visible: false,
+      },
+      patrick: {
+        name: 'Patrick',
+        position: 0,
+        aggressive: 0.6,
+        moveTimer: 0,
+        side: 'right',
+        visible: false,
+      },
+    });
+
+    startGame();
+  };
+
+  const nextNight = () => {
+    if (gameState.night < 5) {
+      setGameState(prev => ({
+        ...prev,
+        night: prev.night + 1,
+        power: 100,
+        time: 300,
+        leftDoor: false,
+        rightDoor: false,
+        cameraOn: false,
+        win: false,
+      }));
+
+      setCharacters({
+        spongebob: {
+          name: 'SpongeBob',
+          position: 0,
+          aggressive: 0.7 * (1 + (gameState.night + 1) * 0.2),
+          moveTimer: 0,
+          side: 'left',
+          visible: false,
+        },
+        patrick: {
+          name: 'Patrick',
+          position: 0,
+          aggressive: 0.6 * (1 + (gameState.night + 1) * 0.2),
+          moveTimer: 0,
+          side: 'right',
+          visible: false,
+        },
+      });
+
+      startGame();
+    }
+  };
+
+  // Функция форматирования времени
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Отрисовка SpongeBob
+  const renderSpongeBob = () => (
+    <View style={[styles.character, styles.spongebob]}>
+      <Svg height="200" width="150">
+        {/* Тело */}
+        <Rect x="10" y="10" width="130" height="180" fill="#FFD700" stroke="#FF8C00" strokeWidth="3" />
+        
+        {/* Глаза */}
+        <Rect x="30" y="30" width="30" height="25" fill="#1E90FF" />
+        <Rect x="90" y="30" width="30" height="25" fill="#1E90FF" />
+        
+        {/* Зрачки */}
+        <Circle cx="45" cy="43" r="8" fill="#000" />
+        <Circle cx="105" cy="43" r="8" fill="#000" />
+        
+        {/* Нос */}
+        <Rect x="70" y="70" width="10" height="15" fill="#FF69B4" />
+        
+        {/* Рот */}
+        <Rect x="40" y="110" width="70" height="30" fill="#8B4513" />
+        <Rect x="45" y="115" width="60" height="5" fill="#FFF" />
+        
+        {/* Дырки */}
+        <Circle cx="55" cy="125" r="4" fill="#000" />
+        <Circle cx="75" cy="125" r="4" fill="#000" />
+        <Circle cx="95" cy="125" r="4" fill="#000" />
+      </Svg>
+      <Text style={styles.characterName}>SpongeBob</Text>
+    </View>
+  );
+
+  // Отрисовка Patrick
+  const renderPatrick = () => (
+    <View style={[styles.character, styles.patrick]}>
+      <Svg height="200" width="150">
+        {/* Тело */}
+        <Rect x="10" y="10" width="130" height="180" fill="#FFB6C1" stroke="#FF69B4" strokeWidth="3" rx="20" />
+        
+        {/* Глаза */}
+        <Circle cx="40" cy="40" r="15" fill="#000" />
+        <Circle cx="110" cy="40" r="15" fill="#000" />
+        
+        {/* Блеск в глазах */}
+        <Circle cx="35" cy="35" r="4" fill="#FFF" />
+        <Circle cx="105" cy="35" r="4" fill="#FFF" />
+        
+        {/* Рот */}
+        <Rect x="50" y="110" width="50" height="20" fill="#8B4513" rx="5" />
+        
+        {/* Язык */}
+        <Rect x="65" y="115" width="20" height="10" fill="#FF69B4" rx="3" />
+      </Svg>
+      <Text style={styles.characterName}>Patrick</Text>
+    </View>
+  );
+
+  if (gameState.gameOver) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.gameOverScreen}>
+          <Text style={styles.gameOverTitle}>ИГРА ОКОНЧЕНА</Text>
+          <Text style={styles.gameOverText}>
+            Вы пережили {gameState.night} ночь{gameState.night > 1 ? 'и' : ''}
+          </Text>
+          <TouchableOpacity style={styles.button} onPress={restartGame}>
+            <Text style={styles.buttonText}>НОВАЯ ИГРА</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (gameState.win) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.winScreen}>
+          <Text style={styles.winTitle}>НОЧЬ ПЕРЕЖИТА!</Text>
+          <Text style={styles.winText}>Ночь {gameState.night} завершена</Text>
+          {gameState.night < 5 ? (
+            <TouchableOpacity style={styles.button} onPress={nextNight}>
+              <Text style={styles.buttonText}>НОЧЬ {gameState.night + 1}</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.congratsText}>ПОЗДРАВЛЯЕМ! ВЫ ПРОШЛИ ВСЕ НОЧИ!</Text>
+          )}
+          <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={restartGame}>
+            <Text style={styles.buttonText}>ГЛАВНОЕ МЕНЮ</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar hidden />
+      
+      {/* Верхняя панель */}
+      <View style={styles.topBar}>
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>НОЧЬ</Text>
+          <Text style={styles.infoValue}>{gameState.night}</Text>
+        </View>
+        
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>ВРЕМЯ</Text>
+          <Text style={styles.infoValue}>{formatTime(gameState.time)}</Text>
+        </View>
+        
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>ЭНЕРГИЯ</Text>
+          <View style={styles.powerBarContainer}>
+            <View style={[styles.powerBar, { width: `${gameState.power}%` }]} />
+          </View>
+          <Text style={styles.infoValue}>{Math.floor(gameState.power)}%</Text>
+        </View>
+      </View>
+
+      {/* Офис */}
+      <View style={styles.office}>
+        {characters.spongebob.visible && renderSpongeBob()}
+        {characters.patrick.visible && renderPatrick()}
+      </View>
+
+      {/* Вид камеры */}
+      {gameState.cameraOn && (
+        <View style={styles.cameraView}>
+          <Text style={styles.cameraTitle}>СИСТЕМА НАБЛЮДЕНИЯ</Text>
+          <View style={styles.cameraGrid}>
+            <View style={styles.cameraScreen}>
+              <Text style={styles.cameraLabel}>Камера 1</Text>
+              {characters.spongebob.position > 0 && characters.spongebob.position < 3 && (
+                <View style={[styles.characterMarker, styles.spongebobMarker]}>
+                  <Text style={styles.markerText}>S</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.cameraScreen}>
+              <Text style={styles.cameraLabel}>Камера 2</Text>
+              {characters.patrick.position > 0 && characters.patrick.position < 3 && (
+                <View style={[styles.characterMarker, styles.patrickMarker]}>
+                  <Text style={styles.markerText}>P</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Панель управления */}
+      <View style={styles.controls}>
+        <TouchableOpacity
+          style={[styles.controlButton, gameState.leftDoor && styles.activeButton]}
+          onPress={() => toggleDoor('left')}>
+          <Text style={styles.controlButtonText}>
+            {gameState.leftDoor ? 'ДВЕРЬ\nОТКРЫТА' : 'ЛЕВАЯ\nДВЕРЬ'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.controlButton, styles.cameraButton, gameState.cameraOn && styles.activeCameraButton]}
+          onPress={toggleCamera}>
+          <Text style={styles.controlButtonText}>
+            {gameState.cameraOn ? 'КАМЕРЫ\nВКЛ' : 'КАМЕРЫ\nВЫКЛ'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.controlButton, gameState.rightDoor && styles.activeButton]}
+          onPress={() => toggleDoor('right')}>
+          <Text style={styles.controlButtonText}>
+            {gameState.rightDoor ? 'ДВЕРЬ\nОТКРЫТА' : 'ПРАВАЯ\nДВЕРЬ'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Кнопки управления */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity style={styles.smallButton} onPress={restartGame}>
+          <Text style={styles.smallButtonText}>Перезапуск</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.smallButton} 
+          onPress={() => setGameState(prev => ({ ...prev, paused: !prev.paused }))}>
+          <Text style={styles.smallButtonText}>
+            {gameState.paused ? 'Продолжить' : 'Пауза'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a2a',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(20, 20, 60, 0.9)',
+    borderBottomWidth: 2,
+    borderBottomColor: '#444',
+  },
+  infoBox: {
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#aaa',
+    marginBottom: 5,
+  },
+  infoValue: {
+    fontSize: 24,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  powerBarContainer: {
+    width: 100,
+    height: 10,
+    backgroundColor: '#333',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginVertical: 5,
+  },
+  powerBar: {
+    height: '100%',
+    backgroundColor: '#00ff00',
+    borderRadius: 5,
+  },
+  office: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    paddingBottom: 50,
+  },
+  character: {
+    alignItems: 'center',
+    opacity: 0,
+  },
+  spongebob: {
+    opacity: 1,
+  },
+  patrick: {
+    opacity: 1,
+  },
+  characterName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 10,
+    textShadowColor: '#000',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 3,
+  },
+  cameraView: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    right: 20,
+    bottom: 200,
+    backgroundColor: 'rgba(0, 0, 30, 0.95)',
+    borderRadius: 10,
+    padding: 15,
+    borderWidth: 2,
+    borderColor: '#444',
+  },
+  cameraTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  cameraGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  cameraScreen: {
+    width: 150,
+    height: 100,
+    backgroundColor: '#1a1a4a',
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#666',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraLabel: {
+    color: '#ccc',
+    fontSize: 14,
+    position: 'absolute',
+    top: 5,
+    left: 5,
+  },
+  characterMarker: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+  },
+  spongebobMarker: {
+    backgroundColor: '#FFD700',
+  },
+  patrickMarker: {
+    backgroundColor: '#FFB6C1',
+  },
+  markerText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  controls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: 'rgba(10, 10, 40, 0.95)',
+    borderTopWidth: 2,
+    borderTopColor: '#444',
+  },
+  controlButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    backgroundColor: '#cc3300',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  activeButton: {
+    backgroundColor: '#00cc00',
+  },
+  cameraButton: {
+    backgroundColor: '#0066cc',
+  },
+  activeCameraButton: {
+    backgroundColor: '#ff9900',
+  },
+  controlButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 10,
+  },
+  smallButton: {
+    padding: 10,
+    backgroundColor: '#333',
+    borderRadius: 5,
+  },
+  smallButtonText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  gameOverScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  gameOverTitle: {
+    fontSize: 40,
+    color: '#ff0000',
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  gameOverText: {
+    fontSize: 24,
+    color: '#fff',
+    marginBottom: 40,
+  },
+  winScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 50, 0, 0.9)',
+  },
+  winTitle: {
+    fontSize: 40,
+    color: '#00ff00',
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  winText: {
+    fontSize: 24,
+    color: '#fff',
+    marginBottom: 40,
+  },
+  congratsText: {
+    fontSize: 20,
+    color: '#ff0',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  button: {
+    padding: 15,
+    backgroundColor: '#0066cc',
+    borderRadius: 10,
+    marginVertical: 10,
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    backgroundColor: '#333',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+});
+
+export default Game;
